@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Alert, Platform, Modal, TextInput, StatusBar as RNStatusBar } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
-import { Calendar, Bell, Droplets } from 'lucide-react-native';
+import { Calendar, Bell, Droplets, History, AlertCircle, CheckCircle } from 'lucide-react-native';
 
 import { COLORS, SPACING } from '../../src/constants/AppTheme';
 import { Card } from '../../src/components/Card';
@@ -10,6 +10,7 @@ import { ActionButton } from '../../src/components/ActionButton';
 import * as Storage from '../../src/utils/storage';
 import * as Prediction from '../../src/utils/prediction';
 import { setupNotifications, scheduleReminder } from '../../src/hooks/useNotifications';
+import { CustomModal } from '../../src/components/CustomModal';
 
 export default function HomeScreen() {
   const [lastPeriod, setLastPeriod] = useState<Date | null>(null);
@@ -20,6 +21,15 @@ export default function HomeScreen() {
   
   const [nextDate, setNextDate] = useState<Date | null>(null);
   const [daysRemaining, setDaysRemaining] = useState(0);
+  
+  const [isLengthModalVisible, setIsLengthModalVisible] = useState(false);
+  const [tempLength, setTempLength] = useState('28');
+
+  const [alertConfig, setAlertConfig] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+  }>({ visible: false, title: '', message: '' });
 
   const loadData = async () => {
     const loadedLastPeriod = await Storage.getLastPeriod();
@@ -54,69 +64,105 @@ export default function HomeScreen() {
 
   const handleDateChange = async (event: any, selectedDate?: Date) => {
     setShowDatePicker(false);
+    
+    if (event.type === 'dismissed') {
+      return;
+    }
+
     if (selectedDate) {
+      const variation = Prediction.calculateVariation(selectedDate, nextDate);
+      const isUnexpected = Math.abs(variation) > 2; // More than 2 days off
+      
       setLastPeriod(selectedDate);
       await Storage.saveLastPeriod(selectedDate);
       
       const dateStr = selectedDate.toISOString().split('T')[0];
       if (!history.includes(dateStr)) {
-        const newHistory = [dateStr, ...history].sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
-        setHistory(newHistory);
-        await Storage.saveHistory(newHistory);
+        const updatedHistory = [dateStr, ...history.filter(h => h !== dateStr)].sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+        setHistory(updatedHistory);
+        await Storage.saveHistory(updatedHistory);
       }
       
-      Alert.alert("Period Added", `Next cycle predicted based on ${format(selectedDate, 'MMM d, yyyy')}`);
+      if (isUnexpected && nextDate) {
+        setAlertConfig({
+          visible: true,
+          title: "Unexpected Start",
+          message: `Your period started ${Math.abs(variation)} days ${variation > 0 ? 'later' : 'earlier'} than predicted. This cycle is marked as ${variation > 7 || variation < -7 ? 'Irregular' : 'slightly varied'}.`
+        });
+      } else {
+        setAlertConfig({
+          visible: true,
+          title: "Period Added",
+          message: `Next cycle predicted based on ${format(selectedDate, 'MMM d, yyyy')}`
+        });
+      }
     }
   };
 
   const markToday = async () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    
+    const variation = Prediction.calculateVariation(today, nextDate);
+    const isUnexpected = Math.abs(variation) > 2;
+
     setLastPeriod(today);
     await Storage.saveLastPeriod(today);
 
     const dateStr = today.toISOString().split('T')[0];
     if (!history.includes(dateStr)) {
-      const newHistory = [dateStr, ...history].sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
-      setHistory(newHistory);
-      await Storage.saveHistory(newHistory);
+      const updatedHistory = [dateStr, ...history.filter(h => h !== dateStr)].sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+      setHistory(updatedHistory);
+      await Storage.saveHistory(updatedHistory);
     }
     
-    Alert.alert("Marked Today", "Your cycle has been updated to start today.");
+    if (isUnexpected && nextDate) {
+        setAlertConfig({
+          visible: true,
+          title: "Unexpected Start",
+          message: `Cycle started today (${Math.abs(variation)} days ${variation > 0 ? 'late' : 'early'}). We've updated your predictions.`
+        });
+    } else {
+        setAlertConfig({
+          visible: true,
+          title: "Marked Today",
+          message: "Your cycle has been updated to start today."
+        });
+    }
   };
 
   const editCycleLength = () => {
-      // In a real TS app we'd use a modal, but for simple/fast we stick to prompt if available
-      // Alert.prompt is iOS only, we'll use a simple alert for generic
-      if (Platform.OS === 'ios') {
-          (Alert as any).prompt(
-            "Cycle Length",
-            "Enter your standard cycle length (days):",
-            [
-              { text: "Cancel", style: "cancel" },
-              { 
-                text: "OK", 
-                onPress: async (value: string) => {
-                  const num = parseInt(value, 10);
-                  if (!isNaN(num) && num > 0) {
-                    setCycleLength(num);
-                    await Storage.saveCycleLength(num);
-                  }
-                } 
-              }
-            ],
-            "plain-text",
-            cycleLength.toString()
-          );
-      } else {
-          Alert.alert("Feature", "Automatic average calculation is used based on your history.");
-      }
+      setTempLength(cycleLength.toString());
+      setIsLengthModalVisible(true);
+  };
+
+  const saveNewCycleLength = async () => {
+    const num = parseInt(tempLength, 10);
+    if (!isNaN(num) && num > 0) {
+      setCycleLength(num);
+      await Storage.saveCycleLength(num);
+      setIsLengthModalVisible(false);
+    } else {
+      setAlertConfig({
+        visible: true,
+        title: "Invalid Input",
+        message: "Please enter a valid number of days for your cycle length."
+      });
+    }
   };
 
   const toggleReminder = async () => {
     const newVal = !reminderEnabled;
     setReminderEnabled(newVal);
     await Storage.saveReminderEnabled(newVal);
+    
+    setAlertConfig({
+      visible: true,
+      title: newVal ? "Reminders Enabled" : "Reminders Disabled",
+      message: newVal 
+        ? "We'll send you a notification 1 day before your next period is expected." 
+        : "You won't receive any automated notifications."
+    });
   };
 
   return (
@@ -148,14 +194,28 @@ export default function HomeScreen() {
           
           <View style={styles.infoRow}>
             <View>
-              <Text style={styles.infoLabel}>PHASE</Text>
-              <Text style={styles.infoValue}>{daysRemaining > 14 ? 'Follicular' : 'Luteal'}</Text>
+              <Text style={styles.infoLabel}>STATUS</Text>
+              <Text style={[
+                styles.infoValue,
+                { color: daysRemaining < -7 ? COLORS.primary : daysRemaining < 0 ? '#FFA500' : COLORS.text }
+              ]}>
+                {daysRemaining < -7 ? 'Irregular (Late)' : daysRemaining < 0 ? 'Late' : 'Normal'}
+              </Text>
             </View>
             <View style={styles.alignRight}>
               <Text style={styles.infoLabel}>CONCEPTION CHANCE</Text>
               <Text style={styles.infoValue}>{daysRemaining > 10 && daysRemaining < 16 ? 'High' : 'Medium'}</Text>
             </View>
           </View>
+        </Card>
+
+        <Card title="LAST PERIOD DATE">
+           <View style={styles.row}>
+              <Droplets size={20} color={COLORS.primary} />
+              <Text style={styles.dateValue}>
+                {lastPeriod ? format(lastPeriod, 'MMM d, yyyy') : 'No data yet'}
+              </Text>
+           </View>
         </Card>
 
         <Card title="NEXT EXPECTED DATE">
@@ -187,9 +247,16 @@ export default function HomeScreen() {
             />
             <ActionButton 
                 onPress={() => setShowDatePicker(true)} 
-                title="Add Last Period" 
+                title="Log Unexpected Day" 
                 icon={Calendar} 
                 secondary
+            />
+            <ActionButton 
+                onPress={() => setShowDatePicker(true)} 
+                title="Add Last Period" 
+                icon={History} 
+                secondary
+                style={{ marginTop: SPACING.md }}
             />
         </View>
 
@@ -202,6 +269,33 @@ export default function HomeScreen() {
             maximumDate={new Date()}
           />
         )}
+
+        <CustomModal
+            visible={isLengthModalVisible}
+            onClose={() => setIsLengthModalVisible(false)}
+            onConfirm={saveNewCycleLength}
+            title="Cycle Length"
+            confirmText="Save"
+            icon={Calendar}
+        >
+            <Text style={styles.modalSub}>Enter your average cycle length (days):</Text>
+            <TextInput 
+                style={styles.textInput}
+                value={tempLength}
+                onChangeText={setTempLength}
+                keyboardType="number-pad"
+                autoFocus
+            />
+        </CustomModal>
+
+        <CustomModal
+            visible={alertConfig.visible}
+            onClose={() => setAlertConfig({ ...alertConfig, visible: false })}
+            title={alertConfig.title}
+            message={alertConfig.message}
+            confirmText="Got it"
+            icon={alertConfig.title.includes('Unexpected') ? AlertCircle : CheckCircle}
+        />
       </ScrollView>
     </SafeAreaView>
   );
@@ -214,13 +308,14 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: SPACING.lg,
+    paddingBottom: Platform.OS === 'android' ? 100 : 40, // Extra padding for tab bar
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: SPACING.xl,
-    paddingTop: Platform.OS === 'android' ? 10 : 0,
+    paddingTop: Platform.OS === 'android' ? (RNStatusBar.currentHeight || 0) + 10 : 0,
   },
   greeting: {
     fontSize: 24,
@@ -327,5 +422,21 @@ const styles = StyleSheet.create({
   },
   actions: {
     marginTop: SPACING.lg,
+  },
+  modalSub: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    marginBottom: SPACING.lg,
+    textAlign: 'center',
+  },
+  textInput: {
+    width: '100%',
+    backgroundColor: '#F8F8F8',
+    borderRadius: 16,
+    padding: SPACING.md,
+    fontSize: 32,
+    fontWeight: '800',
+    textAlign: 'center',
+    color: COLORS.primary,
   }
 });

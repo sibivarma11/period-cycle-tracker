@@ -8,11 +8,12 @@ interface ActionButtonProps {
   title: string;
   icon?: any;
   secondary?: boolean;
+  style?: any;
 }
 
-export const ActionButton = ({ onPress, title, icon: Icon, secondary }: ActionButtonProps) => {
+export const ActionButton = ({ onPress, title, icon: Icon, secondary, style }: ActionButtonProps) => {
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={styles.container}>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={[styles.container, style]}>
       <LinearGradient
         colors={secondary ? [COLORS.card, COLORS.card] : GRADIENTS.primary}
         start={{ x: 0, y: 0 }}

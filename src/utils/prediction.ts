@@ -49,3 +49,26 @@ export const calculateAverageCycleLength = (history: string[], defaultLength = 2
 export const getGap = (dateStr1: string, dateStr2: string): number => {
   return differenceInDays(parseISO(dateStr1), parseISO(dateStr2));
 };
+
+/**
+ * Determines if a cycle is normal or irregular based on user's 28-35 day rule
+ */
+export const getCycleStatus = (gap: number): 'Normal' | 'Irregular' => {
+  if (gap < 28 || gap > 35) return 'Irregular';
+  return 'Normal';
+};
+
+/**
+ * Calculates variation between actual and predicted date
+ */
+export const calculateVariation = (actualDate: Date, expectedDate: Date | null): number => {
+  if (!expectedDate) return 0;
+  
+  const actual = new Date(actualDate);
+  actual.setHours(0, 0, 0, 0);
+  
+  const expected = new Date(expectedDate);
+  expected.setHours(0, 0, 0, 0);
+  
+  return differenceInDays(actual, expected);
+};

@@ -1,10 +1,14 @@
 import { Tabs } from 'expo-router';
+import { Droplets, History } from 'lucide-react-native';
 import React from 'react';
-import { TodayIcon, HistoryIcon } from 'lucide-react-native';
+import { Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COLORS } from '@/src/constants/AppTheme';
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+  
   return (
     <Tabs
       screenOptions={{
@@ -12,37 +16,30 @@ export default function TabLayout() {
         tabBarInactiveTintColor: COLORS.textLight,
         headerShown: false,
         tabBarStyle: {
-            backgroundColor: '#FFF',
-            borderTopWidth: 1,
-            borderTopColor: '#F0F0F0',
-            height: 60,
-            paddingBottom: 8,
+          backgroundColor: '#FFF',
+          borderTopWidth: 1,
+          borderTopColor: '#F0F0F0',
+          height: Platform.OS === 'ios' ? 88 : 70 + insets.bottom,
+          paddingBottom: Platform.OS === 'ios' ? 30 : Math.max(insets.bottom, 12),
+          paddingTop: 12,
         }
       }}>
+
       <Tabs.Screen
         name="index"
         options={{
           title: 'Today',
-          tabBarIcon: ({ color }) => <DropletsIcon color={color} size={24} />,
+          tabBarIcon: ({ color }) => <Droplets color={color} size={24} />,
         }}
       />
+
       <Tabs.Screen
         name="history"
         options={{
           title: 'History',
-          tabBarIcon: ({ color }) => <HistoryIcon color={color} size={24} />,
+          tabBarIcon: ({ color }) => <History color={color} size={24} />,
         }}
       />
     </Tabs>
   );
 }
-
-// Simple wrapper for icons to avoid import issues in this step
-const DropletsIcon = ({ color, size }: { color: string, size: number }) => {
-    const { Droplets } = require('lucide-react-native');
-    return <Droplets color={color} size={size} />;
-};
-const HistoryIcon = ({ color, size }: { color: string, size: number }) => {
-    const { History } = require('lucide-react-native');
-    return <History color={color} size={size} />;
-};
